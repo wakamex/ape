@@ -143,7 +143,8 @@ class ContractMethodHandler(ManagerAccessMixin):
 
     def encode_input(self, *args) -> HexBytes:
         selected_abi = _select_method_abi(self.abis, args)
-        args = self._convert_tuple(args, selected_abi)
+        # args = self._convert_tuple(args, selected_abi)
+        args = _convert_args(args, self.conversion_manager.convert, selected_abi)
         ecosystem = self.provider.network.ecosystem
         encoded_calldata = ecosystem.encode_calldata(selected_abi, *args)
         method_id = ecosystem.get_method_selector(selected_abi)
@@ -192,7 +193,7 @@ class ContractMethodHandler(ManagerAccessMixin):
 
         raise err
 
-    def _convert_tuple(self, v: tuple, abi) -> tuple:
+    def _convert_tuple(self, v: Union[List, Tuple], abi) -> tuple:
         return _convert_args(v, self.conversion_manager.convert, abi)
 
 
@@ -202,8 +203,9 @@ class ContractCallHandler(ContractMethodHandler):
             network = self.provider.network.name
             raise _get_non_contract_error(self.contract.address, network)
 
-        selected_abi = _select_method_abi(self.abis, args)
-        args = self._convert_tuple(args, selected_abi)
+        selected_abi, _ = _select_method_abi(self.abis, args)
+        # args = self._convert_tuple(args, selected_abi)
+        args = _convert_args(args, self.conversion_manager.convert, selected_abi)
 
         return ContractCall(
             abi=selected_abi,
@@ -253,18 +255,36 @@ class ContractCallHandler(ContractMethodHandler):
         return self.transact.estimate_gas_cost(*arguments, **kwargs)
 
 
-def _select_method_abi(abis: List[MethodABI], args: Union[Tuple, List]) -> MethodABI:
+def _select_method_abi(
+    abis: List[MethodABI], args: Union[Tuple, List], **kwargs
+) -> Tuple[MethodABI, List[Any]]:
     args = args or []
     selected_abi = None
+    useful_args = []
     for abi in abis:
         inputs = abi.inputs or []
-        if len(args) == len(inputs):
-            selected_abi = abi
+        if kwargs:
+            print(f"{abis[0].name}({', '.join(inpt.name or '' for inpt in inputs)})")
+            useful_args = []
+            useful_names = {}
+            for idx, inpt in enumerate(inputs):
+                if inpt.name in kwargs:
+                    print(f"adding useful arg {inpt.name}={kwargs[inpt.name]}")
+                    useful_args.insert(idx, kwargs[inpt.name])
+                    useful_names[idx] = inpt.name
+                    print(
+                        f"{abis[0].name}({', '.join(inpt or '' for inpt in useful_names.values())})"
+                    )
+            selected_abi = abi if len(useful_args) == len(inputs) else None
+        else:
+            selected_abi = abi if len(args) == len(inputs) else None
+        if selected_abi:
+            break
 
     if not selected_abi:
-        raise ArgumentsLengthError(len(args))
+        raise ArgumentsLengthError(len(useful_args))
 
-    return selected_abi
+    return selected_abi, useful_args
 
 
 class ContractTransaction(ManagerAccessMixin):
@@ -352,19 +372,20 @@ class ContractTransactionHandler(ContractMethodHandler):
         return ContractCallHandler(self.contract, self.abis)
 
     def __call__(self, *args, **kwargs) -> ReceiptAPI:
-        contract_transaction = self._as_transaction(*args)
+        contract_transaction = self._as_transaction(*args, **kwargs)
         if "sender" not in kwargs and self.account_manager.default_sender is not None:
             kwargs["sender"] = self.account_manager.default_sender
 
         return contract_transaction(*args, **kwargs)
 
-    def _as_transaction(self, *args) -> ContractTransaction:
+    def _as_transaction(self, *args, **kwargs) -> ContractTransaction:
         if not self.contract.is_contract:
             network = self.provider.network.name
             raise _get_non_contract_error(self.contract.address, network)
 
-        selected_abi = _select_method_abi(self.abis, args)
-        args = self._convert_tuple(args, selected_abi)
+        selected_abi, useful_args = _select_method_abi(self.abis, args, **kwargs)
+        # args = self._convert_tuple(useful_args, selected_abi)
+        args = _convert_args(useful_args, self.conversion_manager.convert, selected_abi)
 
         return ContractTransaction(
             abi=selected_abi,
