@@ -124,7 +124,8 @@ plt.show()
 # %%
 # plot rolling average
 plt.plot(apr_data["block_number"],apr_data["apr"].rolling(365).mean(), label="mean")
-plotcolor = plt.gca().lines[0].get_color()
+ax1 = plt.gca()
+plotcolor = ax1.lines[0].get_color()
 plt.xlabel("block number")
 plt.ylabel("mean", color=plotcolor)
 plt.gca().spines['left'].set_color(plotcolor)
@@ -133,10 +134,13 @@ plt.gca().tick_params(axis='y', color=plotcolor, labelcolor=plotcolor)
 ax2 = plt.twinx()
 ax2.spines['right'].set_color("red")
 ax2.tick_params(axis='y', color='red', labelcolor='red')
-ax2.plot(apr_data["block_number"],apr_data["apr"].rolling(365).std(), color="red",label="std")
-ax2.set_ylabel("std", color="red")
+ax2.plot(apr_data["block_number"],apr_data["apr"].rolling(365).std(), color="red",label="standard deviation (RHS)")
+ax2.set_ylabel("standard deviation", color="red")
 # plt.ylim(0.02,0.1)
 plt.title("Mean and standard deviation of stEth daily APR\n365-day rolling average, since the merge")
+combined_legend = [ax1.lines[0],ax2.lines[0]]
+combined_labels = [ax1.get_lines()[0].get_label(),ax2.get_lines()[0].get_label()]
+plt.legend(combined_legend, combined_labels, loc="upper left")
 plt.show()
 
 # %%
